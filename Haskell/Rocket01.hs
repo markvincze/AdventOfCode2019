@@ -11,10 +11,7 @@ fuelForMassRec total remaining =
 
 rocket01 :: String -> (Integer, Integer)
 rocket01 input = (result1, result2) where
-    contentLines = lines input
-    masses = map (\m -> read m :: Integer) contentLines
-    fuels1 = map fuelForMass masses
-    result1 = sum fuels1
+    masses = map (\m -> read m :: Integer) . lines $ input
+    result1 = sum . map fuelForMass $ masses
 
-    fuels2 = map (\m -> fuelForMassRec 0 m) masses
-    result2 = sum fuels2
+    result2 = sum . map (\m -> fuelForMassRec 0 m) $ masses
