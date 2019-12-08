@@ -57,55 +57,6 @@ let saveValue (numbers : int array) position value =
     | Position p -> arrayWith p value numbers
     | Immediate _ -> failwith "Invalid input, trying to save at immediate value"
 
-let rec processCode phase input (numbers : int array) index lastOutput =
-    match instruction numbers index with
-    | Addition (p1, p2, p3) -> let result = (getValue numbers p1) + (getValue numbers p2)
-                               processCode phase input (saveValue numbers p3 result) (index + 4) lastOutput
-    | Multiplication (p1, p2, p3) -> let result = (getValue numbers p1) * (getValue numbers p2)
-                                     processCode phase input (saveValue numbers p3 result) (index + 4) lastOutput
-    | Input p -> let input, newInput = match (phase, input) with
-                                       | Some phase, _ -> phase, input
-                                       | None, Some input -> input, None
-                                       | None, None -> failwith "Input read twice"
-                 processCode None newInput (saveValue numbers p input) (index + 2) lastOutput
-    | Output p -> match input with
-                  | Some _ -> processCode phase input numbers (index + 2) (getValue numbers p)
-                  | None -> (getValue numbers p), numbers, (index + 2)
-    | JumpIfTrue (p1, p2) -> let newIndex = if (getValue numbers p1) <> 0
-                                            then (getValue numbers p2)
-                                            else (index + 3)
-                             processCode phase input numbers newIndex lastOutput
-    | JumpIfFalse (p1, p2) -> let newIndex = if (getValue numbers p1) = 0
-                                             then (getValue numbers p2)
-                                             else (index + 3)
-                              processCode phase input numbers newIndex lastOutput
-    | LessThan (p1, p2, p3) -> let result = if (getValue numbers p1) < (getValue numbers p2) then 1 else 0
-                               processCode phase input (saveValue numbers p3 result) (index + 4) lastOutput
-    | Equals (p1, p2, p3) -> let result = if (getValue numbers p1) = (getValue numbers p2) then 1 else 0
-                             processCode phase input (saveValue numbers p3 result) (index + 4) lastOutput
-    | Halt -> lastOutput, numbers, (index + 2)
-
-let rec distribute e list = match list with
-                            | [] -> [[e]]
-                            | h::t -> (e::list) :: [for d in distribute e t -> h :: d]
-
-let rec permute list = match list with
-                       | [] -> [[]]
-                       | h::t -> List.collect (distribute h) (permute t) 
-
-let processWithPhases (phases : int list) =
-    let amp1, _, _ = processCode (Some phases.[0]) (Some 0) numbers 0 0
-    let amp2, _, _ = processCode (Some phases.[1]) (Some amp1) numbers 0 0
-    let amp3, _, _ = processCode (Some phases.[2]) (Some amp2) numbers 0 0
-    let amp4, _, _ = processCode (Some phases.[3]) (Some amp3) numbers 0 0
-    let amp5, _, _ = processCode (Some phases.[4]) (Some amp4) numbers 0 0
-    amp5
-
-let result1 = [ 0..4 ]
-              |> permute
-              |> List.map processWithPhases
-              |> List.max
-
 type ReturnType = InputReadTwice | OutputReturned | Halted
 
 let rec processCodeF input (numbers : int array) index lastOutput =
@@ -135,6 +86,32 @@ let rec processCodeF input (numbers : int array) index lastOutput =
     | Equals (p1, p2, p3) -> let result = if (getValue numbers p1) = (getValue numbers p2) then 1 else 0
                              processCodeF input (saveValue numbers p3 result) (index + 4) lastOutput
     | Halt -> lastOutput, numbers, (index + 2), Halted
+
+let rec distribute e list = match list with
+                            | [] -> [[e]]
+                            | h::t -> (e::list) :: [for d in distribute e t -> h :: d]
+
+let rec permute list = match list with
+                       | [] -> [[]]
+                       | h::t -> List.collect (distribute h) (permute t) 
+
+let processWithPhases (phases : int list) =
+    let amp1, numbers1, index1, out1 = processCodeF (Some phases.[0]) numbers 0 0
+    let amp2, numbers2, index2, out2 = processCodeF (Some phases.[1]) numbers 0 0
+    let amp3, numbers3, index3, out3 = processCodeF (Some phases.[2]) numbers 0 0
+    let amp4, numbers4, index4, out4 = processCodeF (Some phases.[3]) numbers 0 0
+    let amp5, numbers5, index5, out5 = processCodeF (Some phases.[4]) numbers 0 0
+    let out1, _, _, _ = processCodeF (Some 0) numbers1 index1 amp1
+    let out2, _, _, _ = processCodeF (Some out1) numbers2 index2 amp2
+    let out3, _, _, _ = processCodeF (Some out2) numbers3 index3 amp3
+    let out4, _, _, _ = processCodeF (Some out3) numbers4 index4 amp4
+    let out5, _, _, _ = processCodeF (Some out4) numbers5 index5 amp5
+    out5
+
+let result1 = [ 0..4 ]
+              |> permute
+              |> List.map processWithPhases
+              |> List.max
 
 let t1 (a, _, _) = a
 let t2 (_, b, _) = b
@@ -167,15 +144,6 @@ let processWithPhasesWithFeedbackLoop (phases : int list) =
 
     let programStates = [ (numbers1, index1, out1); (numbers2, index2, out2); (numbers3, index3, out3); (numbers4, index4, out4); (numbers5, index5, out5); ]
     processWithFeedbackLoop programStates 0
-
-// let processWithPhases (phases : int list) =
-//     let amp1, _, _ = processCode (Some phases.[0]) (Some 0) numbers 0 0
-//     let amp2, _, _ = processCode (Some phases.[1]) (Some amp1) numbers 0 0
-//     let amp3, _, _ = processCode (Some phases.[2]) (Some amp2) numbers 0 0
-//     let amp4, _, _ = processCode (Some phases.[3]) (Some amp3) numbers 0 0
-//     let amp5, _, _ = processCode (Some phases.[4]) (Some amp4) numbers 0 0
-//     amp5
-
 
 let result2 = [ 5..9 ]
               |> permute
