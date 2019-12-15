@@ -97,78 +97,52 @@ let turnRight dir = match dir with
                     | Down -> Left
                     | Left -> Up
 
-let rec processCode (numbers : Map<int64, int64>) relativeBase board outputState index =
+let rec processCode (numbers : Map<int64, int64>) relativeBase board outputState score index =
     // printfn "processCode, index: %d, position: %A, direction: %A, inst: %A, painted: %A" index position (instruction numbers index) painted
     match instruction numbers index with
     | Addition (p1, p2, p3) -> let result = (getValue numbers relativeBase p1) + (getValue numbers relativeBase p2)
-                               processCode (saveValue numbers relativeBase p3 result) relativeBase board outputState (index + 4L)
+                               processCode (saveValue numbers relativeBase p3 result) relativeBase board outputState score (index + 4L)
     | Multiplication (p1, p2, p3) -> let result = (getValue numbers relativeBase p1) * (getValue numbers relativeBase p2)
-                                     processCode (saveValue numbers relativeBase p3 result) relativeBase board outputState (index + 4L)
-    | Input p -> failwith "Input operation encountered"
+                                     processCode (saveValue numbers relativeBase p3 result) relativeBase board outputState score (index + 4L)
+    | Input p -> let ballX = Map.findKey (fun _ tile -> tile = Ball) board |> fst
+                 let paddleX = Map.findKey (fun _ tile -> tile = HorizontalPaddle) board |> fst
+                 let input = if ballX > paddleX then 1L
+                             elif ballX < paddleX then -1L
+                             else 0L
+                 processCode (saveValue numbers relativeBase p input) relativeBase board outputState score (index + 2L)
     | Output p -> let outputValue = getValue numbers relativeBase p
                   match outputState.Step with
-                  | X -> processCode numbers relativeBase board { outputState with Step = Y; X = outputValue } (index + 2L)
-                  | Y -> processCode numbers relativeBase board { outputState with Step = Tile; Y = outputValue } (index + 2L)
-                  | Tile -> let tile = match outputValue with
-                                       | 0L -> Empty
-                                       | 1L -> Wall
-                                       | 2L -> Block
-                                       | 3L -> HorizontalPaddle
-                                       | 4L -> Ball
-                                       | _ -> failwith "Invalid input"
-                            let newBoard = Map.add (outputState.X, outputState.Y) tile board
-                            processCode numbers relativeBase newBoard newOutputState (index + 2L)
+                  | X -> processCode numbers relativeBase board { outputState with Step = Y; X = outputValue } score (index + 2L)
+                  | Y -> processCode numbers relativeBase board { outputState with Step = Tile; Y = outputValue } score (index + 2L)
+                  | Tile -> match outputState.X, outputState.Y with
+                            | -1L, 0L -> processCode numbers relativeBase board newOutputState outputValue (index + 2L)
+                            | _ -> let tile = match outputValue with
+                                              | 0L -> Empty
+                                              | 1L -> Wall
+                                              | 2L -> Block
+                                              | 3L -> HorizontalPaddle
+                                              | 4L -> Ball
+                                              | _ -> failwith "Invalid input"
+                                   let newBoard = Map.add (outputState.X, outputState.Y) tile board
+                                   processCode numbers relativeBase newBoard newOutputState score (index + 2L)
     | JumpIfTrue (p1, p2) -> let newIndex = if (getValue numbers relativeBase p1) <> 0L
                                             then getValue numbers relativeBase p2
                                             else index + 3L
-                             processCode numbers relativeBase board outputState newIndex
+                             processCode numbers relativeBase board outputState score newIndex
     | JumpIfFalse (p1, p2) -> let newIndex = if (getValue numbers relativeBase p1) = 0L
                                              then getValue numbers relativeBase p2
                                              else index + 3L
-                              processCode numbers relativeBase board outputState newIndex
+                              processCode numbers relativeBase board outputState score newIndex
     | LessThan (p1, p2, p3) -> let result = if (getValue numbers relativeBase p1) < (getValue numbers relativeBase p2) then 1L else 0L
-                               processCode (saveValue numbers relativeBase p3 result) relativeBase board outputState (index + 4L)
+                               processCode (saveValue numbers relativeBase p3 result) relativeBase board outputState score (index + 4L)
     | Equals (p1, p2, p3) -> let result = if (getValue numbers relativeBase p1) = (getValue numbers relativeBase p2) then 1L else 0L
-                             processCode (saveValue numbers relativeBase p3 result) relativeBase board outputState (index + 4L)
+                             processCode (saveValue numbers relativeBase p3 result) relativeBase board outputState score (index + 4L)
     | AdjustRelativeBase p -> let relativeBase = relativeBase + (getValue numbers relativeBase p)
-                              processCode numbers relativeBase board outputState (index + 2L)
-    | Halt -> board
+                              processCode numbers relativeBase board outputState score (index + 2L)
+    | Halt -> board, score
 
-let finalBoard = processCode numbers 0L Map.empty<int64*int64, Tile> newOutputState 0L
+let finalBoard, _ = processCode numbers 0L Map.empty<int64*int64, Tile> newOutputState 0L 0L
 
 let result1 = finalBoard |> Seq.filter (fun kvp -> kvp.Value = Block) |> Seq.length
 
-let print board score =
-    let xMin = board
-               |> Map.toList
-               |> List.map (fun ((x, _), _) -> x)
-               |> List.min
-
-    let xMax = board
-               |> Map.toList
-               |> List.map (fun ((x, _), _) -> x)
-               |> List.max
-
-    let yMin = board
-               |> Map.toList
-               |> List.map (fun ((_, y), _) -> y)
-               |> List.min
-
-    let yMax = board
-               |> Map.toList
-               |> List.map (fun ((_, y), _) -> y)
-               |> List.max
-
-    Console.SetCursorPosition(0, 0)
-    printfn "Score: %d" score
-    for y in yMin..yMax do
-        for x in xMin..xMax do
-            let c = match board |> Map.tryFind (x, y) with
-                    | None -> ' '
-                    | Some Empty -> ' '
-                    | Some Wall -> '#'
-                    | Some Block -> 't'
-                    | Some HorizontalPaddle -> '='
-                    | Some Ball -> 'o'
-            printf "%c" c 
-        printfn ""
+let _, result2 = processCode (numbers |> Map.add 0L 2L) 0L Map.empty<int64*int64, Tile> newOutputState 0L 0L
