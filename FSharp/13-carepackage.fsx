@@ -75,30 +75,7 @@ type OutputState = {
 
 let newOutputState = { Step = X; X = 0L; Y = 0L; Tile = Empty }
 
-let move dir (x, y) = match dir with
-                      | Up -> x, y - 1
-                      | Right -> x + 1, y
-                      | Down -> x, y + 1
-                      | Left -> x - 1, y
-
-let color (x, y) hull = match Map.tryFind (x, y) hull with
-                        | None -> Black
-                        | Some c -> c
-
-let turnLeft dir = match dir with
-                   | Up -> Left
-                   | Right -> Up
-                   | Down -> Right
-                   | Left -> Down
- 
-let turnRight dir = match dir with
-                    | Up -> Right
-                    | Right -> Down
-                    | Down -> Left
-                    | Left -> Up
-
 let rec processCode (numbers : Map<int64, int64>) relativeBase board outputState score index =
-    // printfn "processCode, index: %d, position: %A, direction: %A, inst: %A, painted: %A" index position (instruction numbers index) painted
     match instruction numbers index with
     | Addition (p1, p2, p3) -> let result = (getValue numbers relativeBase p1) + (getValue numbers relativeBase p2)
                                processCode (saveValue numbers relativeBase p3 result) relativeBase board outputState score (index + 4L)
