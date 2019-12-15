@@ -2,9 +2,9 @@ open System
 open System.IO
 
 type Parameter =
-| Position of int
-| Immediate of int
-| Relative of int
+| Position of int64
+| Immediate of int64
+| Relative of int64
 
 type Instruction = 
 | Addition of Parameter * Parameter * Parameter
@@ -19,32 +19,32 @@ type Instruction =
 | Halt
 
 let numbers = File.ReadAllText("FSharp/11-space-police-input.txt").Split(',')
-              |> Array.mapi (fun i n -> i, n |> Int64.Parse)
-              |> Array.fold (fun m (i, n) -> Map.add i n m) Map.empty<int, int64>
+              |> Array.mapi (fun i n -> i |> int64, n |> Int64.Parse)
+              |> Array.fold (fun m (i, n) -> Map.add i n m) Map.empty<int64, int64>
 
 let modes number = ((number / 100L) % 10L), ((number / 1000L) % 10L), ((number / 10000L) % 10L)
 
 let parameter mode (value : int64) =
     match mode with
-    | 0L -> Position (int value)
-    | 1L -> Immediate (int value)
-    | 2L -> Relative (int value)
+    | 0L -> Position value
+    | 1L -> Immediate value
+    | 2L -> Relative value
     | _ -> failwith "Invalid input for parameter"
 
-let instruction (numbers : Map<int, int64>) index =
+let instruction (numbers : Map<int64, int64>) index =
     let first = numbers.[index]
     let opcode = first % 100L
     let mode1, mode2, mode3 =  first |> modes
     match opcode with
-    | 1L -> Addition ((parameter mode1 (numbers.[index+1])), (parameter mode2 (numbers.[index+2])), (parameter mode3 (numbers.[index+3])))
-    | 2L -> Multiplication ((parameter mode1 (numbers.[index+1])), (parameter mode2 (numbers.[index+2])), (parameter mode3 (numbers.[index+3])))
-    | 3L -> Input (parameter mode1 (numbers.[index+1]))
-    | 4L -> Output (parameter mode1 (numbers.[index+1]))
-    | 5L -> JumpIfTrue ((parameter mode1 (numbers.[index+1])), (parameter mode2 (numbers.[index+2])))
-    | 6L -> JumpIfFalse ((parameter mode1 (numbers.[index+1])), (parameter mode2 (numbers.[index+2])))
-    | 7L -> LessThan ((parameter mode1 (numbers.[index+1])), (parameter mode2 (numbers.[index+2])), (parameter mode3 (numbers.[index+3])))
-    | 8L -> Equals ((parameter mode1 (numbers.[index+1])), (parameter mode2 (numbers.[index+2])), (parameter mode3 (numbers.[index+3])))
-    | 9L -> AdjustRelativeBase (parameter mode1 (numbers.[index+1]))
+    | 1L -> Addition ((parameter mode1 (numbers.[index+1L])), (parameter mode2 (numbers.[index+2L])), (parameter mode3 (numbers.[index+3L])))
+    | 2L -> Multiplication ((parameter mode1 (numbers.[index+1L])), (parameter mode2 (numbers.[index+2L])), (parameter mode3 (numbers.[index+3L])))
+    | 3L -> Input (parameter mode1 (numbers.[index+1L]))
+    | 4L -> Output (parameter mode1 (numbers.[index+1L]))
+    | 5L -> JumpIfTrue ((parameter mode1 (numbers.[index+1L])), (parameter mode2 (numbers.[index+2L])))
+    | 6L -> JumpIfFalse ((parameter mode1 (numbers.[index+1L])), (parameter mode2 (numbers.[index+2L])))
+    | 7L -> LessThan ((parameter mode1 (numbers.[index+1L])), (parameter mode2 (numbers.[index+2L])), (parameter mode3 (numbers.[index+3L])))
+    | 8L -> Equals ((parameter mode1 (numbers.[index+1L])), (parameter mode2 (numbers.[index+2L])), (parameter mode3 (numbers.[index+3L])))
+    | 9L -> AdjustRelativeBase (parameter mode1 (numbers.[index+1L]))
     | 99L -> Halt
     | _ -> failwith "Invalid input for the opcode"
 
@@ -88,47 +88,47 @@ let turnRight dir = match dir with
                     | Down -> Left
                     | Left -> Up
 
-let rec processCode numbers relativeBase hull position direction painted step index =
+let rec processCode (numbers : Map<int64, int64>) relativeBase hull position direction painted step index =
     // printfn "processCode, index: %d, position: %A, direction: %A, inst: %A, painted: %A" index position direction (instruction numbers index) painted
     match instruction numbers index with
     | Addition (p1, p2, p3) -> let result = (getValue numbers relativeBase p1) + (getValue numbers relativeBase p2)
-                               processCode (saveValue numbers relativeBase p3 result) relativeBase hull position direction painted step (index + 4)
+                               processCode (saveValue numbers relativeBase p3 result) relativeBase hull position direction painted step (index + 4L)
     | Multiplication (p1, p2, p3) -> let result = (getValue numbers relativeBase p1) * (getValue numbers relativeBase p2)
-                                     processCode (saveValue numbers relativeBase p3 result) relativeBase hull position direction painted step (index + 4)
+                                     processCode (saveValue numbers relativeBase p3 result) relativeBase hull position direction painted step (index + 4L)
     | Input p -> let input = match color position hull with
                              | Black -> 0L
                              | White -> 1L
-                 processCode (saveValue numbers relativeBase p input) relativeBase hull position direction painted step (index + 2)
+                 processCode (saveValue numbers relativeBase p input) relativeBase hull position direction painted step (index + 2L)
     | Output p -> match step with
                   | Paint -> let colorToPaint = match getValue numbers relativeBase p with
                                                 | 0L -> Black
                                                 | 1L -> White
                                                 | _ -> failwith "Invalid input for color to paint"
-                             processCode numbers relativeBase (Map.add position colorToPaint hull) position direction (Set.add position painted) TurnAndMove (index + 2)
+                             processCode numbers relativeBase (Map.add position colorToPaint hull) position direction (Set.add position painted) TurnAndMove (index + 2L)
                   | TurnAndMove -> let newDir = match getValue numbers relativeBase p with
                                                 | 0L -> turnLeft direction
                                                 | 1L -> turnRight direction
                                                 | _ -> failwith "Invalid input for turn direction"
-                                   processCode numbers relativeBase hull (move newDir position) newDir painted Paint (index + 2)
+                                   processCode numbers relativeBase hull (move newDir position) newDir painted Paint (index + 2L)
     | JumpIfTrue (p1, p2) -> let newIndex = if (getValue numbers relativeBase p1) <> 0L
-                                            then (getValue numbers relativeBase p2) |> int
-                                            else (index + 3)
+                                            then getValue numbers relativeBase p2
+                                            else index + 3L
                              processCode numbers relativeBase hull position direction painted step newIndex
     | JumpIfFalse (p1, p2) -> let newIndex = if (getValue numbers relativeBase p1) = 0L
-                                             then (getValue numbers relativeBase p2) |> int
-                                             else (index + 3)
+                                             then getValue numbers relativeBase p2
+                                             else index + 3L
                               processCode numbers relativeBase hull position direction painted step newIndex
     | LessThan (p1, p2, p3) -> let result = if (getValue numbers relativeBase p1) < (getValue numbers relativeBase p2) then 1L else 0L
-                               processCode (saveValue numbers relativeBase p3 result) relativeBase hull position direction painted step (index + 4)
+                               processCode (saveValue numbers relativeBase p3 result) relativeBase hull position direction painted step (index + 4L)
     | Equals (p1, p2, p3) -> let result = if (getValue numbers relativeBase p1) = (getValue numbers relativeBase p2) then 1L else 0L
-                             processCode (saveValue numbers relativeBase p3 result) relativeBase hull position direction painted step (index + 4)
-    | AdjustRelativeBase p -> let relativeBase = relativeBase + (getValue numbers relativeBase p |> int)
-                              processCode numbers relativeBase hull position direction painted step (index + 2)
+                             processCode (saveValue numbers relativeBase p3 result) relativeBase hull position direction painted step (index + 4L)
+    | AdjustRelativeBase p -> let relativeBase = relativeBase + (getValue numbers relativeBase p)
+                              processCode numbers relativeBase hull position direction painted step (index + 2L)
     | Halt -> painted |> Set.count, hull
 
-let result1, _ = processCode numbers 0 Map.empty<int*int, Color> (0, 0) Up Set.empty<int * int> Paint 0
+let result1, _ = processCode numbers 0L Map.empty<int*int, Color> (0, 0) Up Set.empty<int * int> Paint 0L
 
-let result2, resultHull = processCode numbers 0 (Map.empty<int*int, Color> |> Map.add (0, 0) White) (0, 0) Up Set.empty<int * int> Paint 0
+let result2, resultHull = processCode numbers 0L (Map.empty<int*int, Color> |> Map.add (0, 0) White) (0, 0) Up Set.empty<int * int> Paint 0L
 
 let xMin = resultHull
            |> Map.toList
