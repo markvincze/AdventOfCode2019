@@ -21,14 +21,17 @@ let parseLine (line : string) =
 
 let reactions = File.ReadAllLines "FSharp/14-stoichiometry-input.txt"
                 |> List.ofArray
-                |> List.map parseLine
+                |> List.map (fun l -> let r = parseLine l
+                                      let { Output = (_, m) } = r
+                                      (m, r))
+                |> Map.ofList
 
 let rec calcOre reactions surplus (amount, material) =
     match material with
     | "ORE" -> match surplus |> Map.tryFind "ORE" with
                | Some oreSurplus -> max (amount - oreSurplus) 0, Map.add "ORE" (max (oreSurplus - amount) 0) surplus
                | None -> amount, surplus
-    | material -> let { Input = input; Output = (outputAmount, _) } = List.find (fun { Output = (_, m) } -> m = material ) reactions
+    | material -> let { Input = input; Output = (outputAmount, _) } = Map.find material reactions
                   let surplusAmount = surplus |> Map.tryFind material |> Option.defaultValue 0
                   let amountWithoutSurplus = max (amount - surplusAmount) 0
                   let reactionCount = Math.Ceiling ((float amountWithoutSurplus) / (float outputAmount)) |> int
