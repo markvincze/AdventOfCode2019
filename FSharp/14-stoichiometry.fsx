@@ -40,3 +40,18 @@ let rec calcOre reactions surplus (amount, material) =
                       (total + totalNeeded, newSurplus)) (0, surplus)
 
 let result1 = calcOre reactions Map.empty<string, int> (1, "FUEL")
+
+let oreAmount = 1000000000000L
+
+let maxProduced reactions surplus ore =
+    let rec maxProduced reactions surplus ore produced =
+        let cost, surplus = calcOre reactions surplus (1, "FUEL")
+        if ((ore / 500000000L) <> ((ore - (int64 cost)) / 500000000L))
+        then printfn "Ore: %d, producedAmount: %d" ore produced
+        else ()
+        if (ore - (int64 cost) > 0L)
+        then (maxProduced reactions surplus (ore - (int64 cost))) (produced + 1)
+        else produced
+    maxProduced reactions surplus ore 0
+
+let result2 = maxProduced reactions Map.empty<string, int> oreAmount
