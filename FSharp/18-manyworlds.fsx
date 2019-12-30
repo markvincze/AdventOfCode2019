@@ -28,32 +28,90 @@ let right (x, y) = (x + 1, y)
 let down (x, y) = (x, y + 1)
 let left (x, y) = (x - 1, y)
 
-let accessibleKeys vault collectedKeys pos =
-    let addNeighbors queue pos dist =
-        ((up pos), dist) ::
-        ((right pos), dist) ::
-        ((down pos), dist) ::
-        ((left pos), dist) :: queue
-        |> List.sortBy snd
+type Direction = Up | Right | Down | Left
 
-    let rec accessibleKeys (vault : Tile[,]) collectedKeys queue visited accessibles =
+let move dir pos = match dir with
+                   | Up -> up pos
+                   | Right -> right pos
+                   | Down -> down pos
+                   | Left -> left pos
+
+let opposite dir = match dir with
+                   | Up -> Down
+                   | Right -> Left
+                   | Down -> Up
+                   | Left -> Right
+
+let hasCycle (vault : Tile[,]) startingPos startingFrom =
+    let forwardDirections from =  [ Up; Right; Down; Left ] |> List.except [ (opposite from) ]
+    let rec hasCycle (vault : Tile[,]) visited queue =
+        // printfn "hasCycle, visited: %A, queue: %A" visited queue
+        match queue with
+        | [] -> false
+        | ((x, y), from) :: rest ->
+            let dirs = forwardDirections from
+            // printfn "forwardDirections: %A" dirs
+            if dirs |> List.exists (fun dir -> List.contains (move dir (x, y)) visited)
+            then true
+            else let newItems = dirs
+                                |> List.map (fun dir -> let sx, sy = move dir (x, y)
+                                                        match vault.[sx, sy] with
+                                                        | Wall -> None
+                                                        | _ -> Some ((sx, sy), dir))
+                                |> List.choose id
+                 hasCycle vault ((x, y) :: visited) (List.append newItems rest)
+    hasCycle vault [] [(startingPos, startingFrom)]
+
+let keyPositions =
+    [ for x in 0..((String.length input.[0]) - 1) -> x ]
+    |> List.collect (fun x -> [ for y in 0..((Array.length input) - 1) -> (x, y) ])
+    |> List.filter (fun (x, y) -> match vault.[x, y] with
+                                  | Key _ -> true
+                                  | _ -> false)
+
+let accessibleKeysForCache vault fromPos =
+    let addNeighbors queue pos dist doors =
+        ((up pos), dist, doors) ::
+        ((right pos), dist, doors) ::
+        ((down pos), dist, doors) ::
+        ((left pos), dist, doors) :: queue
+        |> List.sortBy (fun (_, d, _) -> d)
+
+    let rec accessibleKeysForCache (vault : Tile[,]) queue visited start accessibles =
         match queue with
         | [] -> accessibles
-        | ((x, y), dist) :: rest ->
-            if Set.contains (x, y) visited then accessibleKeys vault collectedKeys rest visited accessibles
+        | ((x, y), dist, doors) :: rest ->
+            if Set.contains (x, y) visited
+            then accessibleKeysForCache vault rest visited start accessibles
             else match vault.[x, y] with
-                 | Wall -> accessibleKeys vault collectedKeys rest visited accessibles
-                 | Empty -> accessibleKeys vault collectedKeys (addNeighbors rest (x, y) (dist + 1)) (Set.add (x, y) visited) accessibles
-                 | Door c -> if List.contains c collectedKeys
-                             then accessibleKeys vault collectedKeys (addNeighbors rest (x, y) (dist + 1)) (Set.add (x, y) visited) accessibles
-                             else accessibleKeys vault collectedKeys rest visited accessibles
-                 | Key c -> if List.contains c collectedKeys
-                            then accessibleKeys vault collectedKeys (addNeighbors rest (x, y) (dist + 1)) (Set.add (x, y) visited) accessibles
-                            else accessibleKeys vault collectedKeys (addNeighbors rest (x, y) (dist + 1)) (Set.add (x, y) visited) (((x, y), dist, c) :: accessibles)
+                 | Wall -> accessibleKeysForCache vault rest (Set.add (x, y) visited) start accessibles
+                 | Empty -> accessibleKeysForCache vault (addNeighbors rest (x, y) (dist + 1) doors) (Set.add (x, y) visited) start accessibles
+                 | Door c -> accessibleKeysForCache vault (addNeighbors rest (x, y) (dist + 1) (c :: doors)) (Set.add (x, y) visited) start accessibles
+                 | Key c -> if (x, y) = start
+                            then accessibleKeysForCache vault (addNeighbors rest (x, y) (dist + 1) doors) (Set.add (x, y) visited) start accessibles
+                            else accessibleKeysForCache vault (addNeighbors rest (x, y) (dist + 1) doors) (Set.add (x, y) visited) start (((x, y), dist, c, doors) :: accessibles)
 
-    accessibleKeys vault collectedKeys [ (pos, 0) ] Set.empty<int * int> []
+    accessibleKeysForCache vault [ (fromPos, 0, []) ] Set.empty<int * int> fromPos []
 
-// let ak = accessibleKeys vault [] startingPos
+let accessibleCache =
+    startingPos :: keyPositions
+    |> List.map (fun pos -> (pos, (accessibleKeysForCache vault pos)))
+    |> Map.ofList
+
+let minDistBetweenTwoKeys =
+    accessibleCache
+    |> Seq.filter (fun kvp -> kvp.Key <> startingPos)
+    |> Seq.map (fun kvp -> kvp.Value |> List.map (fun (_, dist, _, _ ) -> dist))
+    |> Seq.collect id
+    |> Seq.min
+
+let accessibleKeys vault collectedKeys pos =
+    match Map.tryFind pos accessibleCache with
+    | None -> failwith "Missing cache item"
+    | Some accessibles -> accessibles
+                          |> List.filter (fun (_, _, key, _) -> collectedKeys |> Set.contains key |> not)
+                          |> List.filter (fun (_, _, _, doorsPassed) ->  (doorsPassed |> List.forall (fun d -> Set.contains d collectedKeys)))
+                          |> List.map (fun (keyPos, dist, key, _) -> keyPos, dist, key)
 
 let allKeys =
     [ for x in 0..((String.length input.[0]) - 1) -> x ]
@@ -65,82 +123,41 @@ let allKeys =
                                | Key c -> c
                                | _ -> failwith "")
 
-// HandleCache item: Set<char>, 
-// HandledCache: Map<Set<char> * (int * int), int>
+let allKeyCount = allKeys |> List.length
 
-// queue: pos, distSoFar, collectedKeys
 let shortestSolution vault startingPos =
-    let rec shortestSolution vault queue (handledCache: Map<Set<char> * (int * int), int>) bestSolution collectedCount =
-        // match 
-        // let queue = queue |> List.sortBy (fun (_, d, _) -> d)
-        // printfn "shortestSolution, queue length: %d, bestSolution: %A, queue head: %A" (List.length queue) bestSolution (List.tryHead queue)
-        match bestSolution with
-        | None ->
-            match queue with
-            | [] -> failwith "No solution was found"
-            // | (pos, distSoFar, collectedKeys) :: rest ->
-            // | queueItems ->
-            | pick :: rest ->
-                // let pick = List.minBy (fun (_, distSoFar, _) -> distSoFar) queueItems
-                let (pos, distSoFar, collectedKeys) = pick
-                // let rest = List.except [ pick ] queueItems
-                let handled = match Map.tryFind ((Set.ofList collectedKeys), pos) handledCache with
-                              | None -> false
-                              | (Some d) when d > distSoFar -> false
-                              | _ -> true
-                if handled
-                then //printfn "Scenario handled already, skipping"
-                     shortestSolution vault rest handledCache bestSolution collectedCount
-                else let newHandledCache = Map.add ((Set.ofList collectedKeys), pos) distSoFar handledCache
-                     let ak = accessibleKeys vault collectedKeys pos // NOTE: Accessible keys accessed here.
-                     let newCollectedCount = (List.length collectedKeys)
-                     if newCollectedCount > collectedCount
-                     then printfn "Collected keys: %d" (List.length collectedKeys)
-                          printfn "queue length: %d, bestSolution: %A, queue head: %A" (List.length queue) bestSolution (List.tryHead queue)
-                     else ()
-                    //  printfn "List.length collectedKeys: %d, List.length allKeys: %d, ak: %A" (List.length collectedKeys) (List.length allKeys) ak
-                     if List.length collectedKeys = (List.length allKeys) - 1
-                     then let (_, dist, _) :: _ = ak
-                          printfn "Solution found!"
-                          shortestSolution vault rest newHandledCache (Some (distSoFar + dist)) newCollectedCount
-                     else let newQueue = rest
-                                         |> List.append
-                                             (ak |> List.map (fun (pos, dist, key) -> pos, distSoFar + dist, key :: collectedKeys))
-                          shortestSolution vault newQueue newHandledCache bestSolution newCollectedCount
-        | Some bestSolution -> 
-            match queue with
-            | [] -> bestSolution
-            // | queueItems ->
-            | pick :: rest ->
-                // let pick = List.minBy (fun (_, distSoFar, _) -> distSoFar) queueItems
-                let (pos, distSoFar, collectedKeys) = pick
-                // let rest = List.except [ pick ] queueItems
-                let handled = match Map.tryFind ((Set.ofList collectedKeys), pos) handledCache with
-                              | None -> false
-                              | (Some d) when d > distSoFar -> false
-                              | _ -> true
-                if handled
-                then shortestSolution vault rest handledCache (Some bestSolution) collectedCount
-                else
-                     let newCollectedCount = (List.length collectedKeys)
-                     if newCollectedCount > collectedCount
-                     then printfn "Collected keys: %d" (List.length collectedKeys)
-                          printfn "queue length: %d, bestSolution: %A, queue head: %A" (List.length queue) bestSolution (List.tryHead queue)
-                     else ()
-                     if distSoFar >= bestSolution
-                     then bestSolution
-                     else let ak = accessibleKeys vault collectedKeys pos
-                          if List.length collectedKeys = (List.length allKeys) - 1
-                          then let (_, dist, _) :: _ = ak
-                               shortestSolution vault rest handledCache (Some (distSoFar + dist)) newCollectedCount
-                          else let newQueue = rest
-                                              |> List.append
-                                                  (ak |> List.map (fun (pos, dist, key) -> pos, distSoFar + dist, key :: collectedKeys))
-                               shortestSolution vault newQueue handledCache (Some bestSolution) newCollectedCount
+    let createHandledKey (collectedKeys : Set<char>) =
+        collectedKeys
+        |> Seq.sort
+        |> Seq.map string
+        |> String.concat ""
 
-    shortestSolution vault [ (startingPos, 0, []) ] Map.empty<Set<char> * (int * int), int> None 0
+    let rec shortestSolution vault queue (handledCache: Map<string * (int * int), int>) bestSolution =
+        let queue = queue
+                    |> List.filter (fun (_, distSoFar, collectedKeys) -> (Option.isNone bestSolution) || (Option.get bestSolution) > (distSoFar + (minDistBetweenTwoKeys * (allKeyCount - (Set.count collectedKeys)))))
+        match queue with
+        | [] -> match bestSolution with
+                | None -> failwith "No solution was found"
+                | Some bestSolution -> bestSolution
+        | pick :: rest ->
+            let (pos, distSoFar, collectedKeys) = pick
+            let handled = match Map.tryFind ((createHandledKey collectedKeys), pos) handledCache with
+                          | None -> false
+                          | (Some d) when d > distSoFar -> false
+                          | _ -> true
+            if handled
+            then shortestSolution vault rest handledCache bestSolution
+            else let newHandledCache = Map.add ((createHandledKey collectedKeys), pos) distSoFar handledCache
+                 if Set.count collectedKeys = allKeyCount
+                 then let newBestSolution = match bestSolution with 
+                                            | None -> distSoFar
+                                            | Some d -> min d distSoFar
+                      shortestSolution vault rest newHandledCache (Some newBestSolution)
+                 else let ak = accessibleKeys vault collectedKeys pos
+                      let newQueue = rest
+                                     |> List.append (ak |> List.map (fun (pos, dist, key) -> pos, distSoFar + dist, Set.add key collectedKeys))
+                      shortestSolution vault newQueue newHandledCache bestSolution
 
-// let ak = accessibleKeys vault [] startingPos
+    shortestSolution vault [ (startingPos, 0, Set.empty<char>) ] Map.empty<string * (int * int), int> None
+
 let result1 = shortestSolution vault startingPos
-
-
