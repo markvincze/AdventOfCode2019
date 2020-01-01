@@ -18,11 +18,6 @@ let input = File.ReadAllLines "FSharp/18-manyworlds-input.txt"
 
 let vault = Array2D.init (String.length input.[0]) (Array.length input)  (fun x y -> input.[y].[x] |> parse)
 
-let startingPos =
-    [ for x in 0..((String.length input.[0]) - 1) -> x ]
-    |> List.collect (fun x -> [ for y in 0..((Array.length input) - 1) -> (x, y) ])
-    |> List.find (fun (x, y) -> input.[y].[x] = '@')
-
 let up (x, y) = (x, y - 1)
 let right (x, y) = (x + 1, y)
 let down (x, y) = (x, y + 1)
@@ -45,12 +40,10 @@ let opposite dir = match dir with
 let hasCycle (vault : Tile[,]) startingPos startingFrom =
     let forwardDirections from =  [ Up; Right; Down; Left ] |> List.except [ (opposite from) ]
     let rec hasCycle (vault : Tile[,]) visited queue =
-        // printfn "hasCycle, visited: %A, queue: %A" visited queue
         match queue with
         | [] -> false
         | ((x, y), from) :: rest ->
             let dirs = forwardDirections from
-            // printfn "forwardDirections: %A" dirs
             if dirs |> List.exists (fun dir -> List.contains (move dir (x, y)) visited)
             then true
             else let newItems = dirs
@@ -93,17 +86,33 @@ let accessibleKeysForCache vault fromPos =
 
     accessibleKeysForCache vault [ (fromPos, 0, []) ] Set.empty<int * int> fromPos []
 
+printfn "Determining starting positions"
+let startingPositions =
+    [ for x in 0..((String.length input.[0]) - 1) -> x ]
+    |> List.collect (fun x -> [ for y in 0..((Array.length input) - 1) -> (x, y) ])
+    |> List.filter (fun (x, y) -> input.[y].[x] = '@')
+
+// let startingPositions =
+//     [ for x in 0..((String.length input.[0]) - 1) -> x ]
+//     |> List.collect (fun x -> [ for y in 0..((Array.length input) - 1) -> (x, y) ])
+//     |> List.filter (fun (x, y) -> vault.[x, y] = '@')
+
+printfn "Building accessible cache"
 let accessibleCache =
-    startingPos :: keyPositions
+    startingPositions
+    |> List.append keyPositions
     |> List.map (fun pos -> (pos, (accessibleKeysForCache vault pos)))
     |> Map.ofList
 
+printfn "Calculating min distance"
 let minDistBetweenTwoKeys =
     accessibleCache
-    |> Seq.filter (fun kvp -> kvp.Key <> startingPos)
+    |> Seq.filter (fun kvp -> List.contains kvp.Key startingPositions |> not)
     |> Seq.map (fun kvp -> kvp.Value |> List.map (fun (_, dist, _, _ ) -> dist))
     |> Seq.collect id
-    |> Seq.min
+    |> Seq.sort
+    |> Seq.tryHead
+printfn "Min distance: %A" minDistBetweenTwoKeys
 
 let accessibleKeys vault collectedKeys pos =
     match Map.tryFind pos accessibleCache with
@@ -125,39 +134,63 @@ let allKeys =
 
 let allKeyCount = allKeys |> List.length
 
-let shortestSolution vault startingPos =
-    let createHandledKey (collectedKeys : Set<char>) =
-        collectedKeys
+let rec replaceNth n item list =
+    match n with
+    | 0 -> match list with
+           | _ :: tail -> item :: tail
+           | [] -> failwith "The list is empty."
+    | n -> match list with
+           | head :: tail -> head :: (replaceNth (n - 1) item tail)
+           | [] -> failwith "The list is empty."
+
+let shortestSolution vault startingPositions =
+    let createHandledKey (collectedKeys : Set<char>) (positions : List<int * int>) =
+        (collectedKeys
         |> Seq.sort
         |> Seq.map string
-        |> String.concat ""
+        |> String.concat "")
+        +
+        (positions
+        |> Seq.map (fun (x, y) -> sprintf "%d,%d," x y)
+        |> String.concat "")
 
-    let rec shortestSolution vault queue (handledCache: Map<string * (int * int), int>) bestSolution =
+    let rec shortestSolution vault queue bestSolution =
+        // printfn "shortestSolution, queue: %A, bestSolution: %A" queue bestSolution
         let queue = queue
-                    |> List.filter (fun (_, distSoFar, collectedKeys) -> (Option.isNone bestSolution) || (Option.get bestSolution) > (distSoFar + (minDistBetweenTwoKeys * (allKeyCount - (Set.count collectedKeys)))))
+                    |> List.filter
+                        (fun states -> let totalDist = states |> List.sumBy (fun (_, d, _) -> d)
+                                       let totalCollected = states |> List.sumBy (fun (_, _, collectedKeys) -> Set.count collectedKeys)
+                                    //    (Option.isNone bestSolution) || (Option.get bestSolution) > (totalDist + totalCollected))
+                                       (Option.isNone bestSolution) || (Option.get bestSolution) > (totalDist + ((Option.defaultValue 0 minDistBetweenTwoKeys) * (allKeyCount - totalCollected))))
         match queue with
         | [] -> match bestSolution with
                 | None -> failwith "No solution was found"
                 | Some bestSolution -> bestSolution
-        | pick :: rest ->
-            let (pos, distSoFar, collectedKeys) = pick
-            let handled = match Map.tryFind ((createHandledKey collectedKeys), pos) handledCache with
-                          | None -> false
-                          | (Some d) when d > distSoFar -> false
-                          | _ -> true
-            if handled
-            then shortestSolution vault rest handledCache bestSolution
-            else let newHandledCache = Map.add ((createHandledKey collectedKeys), pos) distSoFar handledCache
-                 if Set.count collectedKeys = allKeyCount
-                 then let newBestSolution = match bestSolution with 
-                                            | None -> distSoFar
-                                            | Some d -> min d distSoFar
-                      shortestSolution vault rest newHandledCache (Some newBestSolution)
-                 else let ak = accessibleKeys vault collectedKeys pos
-                      let newQueue = rest
-                                     |> List.append (ak |> List.map (fun (pos, dist, key) -> pos, distSoFar + dist, Set.add key collectedKeys))
-                      shortestSolution vault newQueue newHandledCache bestSolution
+        | states :: rest ->
+            if List.length states <> List.length startingPositions
+            then failwith ("Incorrect states length: " + (sprintf "%A" states))
+            else ()
 
-    shortestSolution vault [ (startingPos, 0, Set.empty<char>) ] Map.empty<string * (int * int), int> None
+            if List.sumBy (fun (_, _, collectedKeys) -> Set.count collectedKeys) states = allKeyCount
+            then let newBestSolution = match bestSolution with 
+                                       | None -> List.sumBy (fun (_, distSoFar, _) -> distSoFar) states
+                                       | Some d -> min d (List.sumBy (fun (_, distSoFar, _) -> distSoFar) states)
+                 printfn "Solution was found, states: %A" states
+                 shortestSolution vault rest (Some newBestSolution)
+            else 
+                 let allCollectedKeys = states
+                                        |> List.map (fun (_, _, collectedKeys) -> collectedKeys)
+                                        |> Set.unionMany
+                 let newQueueItems =
+                    states
+                    |> List.mapi (fun i (pos, distSoFar, collectedKeys) -> 
+                                    accessibleKeys vault allCollectedKeys pos
+                                    |> List.map (fun (pos, dist, key) -> states |> replaceNth i (pos, distSoFar + dist, Set.add key collectedKeys)))
+                    |> List.collect id
+                 shortestSolution vault (List.append rest newQueueItems) bestSolution
 
-let result1 = shortestSolution vault startingPos
+    let initialQueueItem = startingPositions |> List.map (fun p -> p, 0, Set.empty<char>)
+    shortestSolution vault [ initialQueueItem ] None
+
+// let initialQueueItem = startingPositions |> List.map (fun p -> p, 0, Set.empty<char>)
+let result1 = shortestSolution vault startingPositions
