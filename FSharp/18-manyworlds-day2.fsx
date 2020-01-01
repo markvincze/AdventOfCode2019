@@ -144,7 +144,13 @@ let rec replaceNth n item list =
            | [] -> failwith "The list is empty."
 
 let shortestSolution vault startingPositions =
-    let createHandledKey (collectedKeys : Set<char>) (positions : List<int * int>) =
+    // let createHandledKey (collectedKeys : Set<char>) (positions : List<int * int>) =
+    let createHandledKey (states : list<(int * int) * int * Set<char>>) =
+        let collectedKeys = states
+                            |> List.map (fun (_, _, collectedKeys) -> collectedKeys)
+                            |> Set.unionMany
+        let positions = states
+                        |> List.map (fun (pos, _, _) -> pos)
         (collectedKeys
         |> Seq.sort
         |> Seq.map string
@@ -154,14 +160,13 @@ let shortestSolution vault startingPositions =
         |> Seq.map (fun (x, y) -> sprintf "%d,%d," x y)
         |> String.concat "")
 
-    let rec shortestSolution vault queue bestSolution =
-        // printfn "shortestSolution, queue: %A, bestSolution: %A" queue bestSolution
+    let rec shortestSolution vault queue (handledCache: Map<string, int>) bestSolution =
         let queue = queue
                     |> List.filter
                         (fun states -> let totalDist = states |> List.sumBy (fun (_, d, _) -> d)
                                        let totalCollected = states |> List.sumBy (fun (_, _, collectedKeys) -> Set.count collectedKeys)
-                                    //    (Option.isNone bestSolution) || (Option.get bestSolution) > (totalDist + totalCollected))
                                        (Option.isNone bestSolution) || (Option.get bestSolution) > (totalDist + ((Option.defaultValue 0 minDistBetweenTwoKeys) * (allKeyCount - totalCollected))))
+                    |> List.sortByDescending (fun states -> states |> List.sumBy (fun (_, _, collectedKeys) -> Set.count collectedKeys))
         match queue with
         | [] -> match bestSolution with
                 | None -> failwith "No solution was found"
@@ -171,26 +176,33 @@ let shortestSolution vault startingPositions =
             then failwith ("Incorrect states length: " + (sprintf "%A" states))
             else ()
 
-            if List.sumBy (fun (_, _, collectedKeys) -> Set.count collectedKeys) states = allKeyCount
-            then let newBestSolution = match bestSolution with 
-                                       | None -> List.sumBy (fun (_, distSoFar, _) -> distSoFar) states
-                                       | Some d -> min d (List.sumBy (fun (_, distSoFar, _) -> distSoFar) states)
-                 printfn "Solution was found, states: %A" states
-                 shortestSolution vault rest (Some newBestSolution)
-            else 
-                 let allCollectedKeys = states
-                                        |> List.map (fun (_, _, collectedKeys) -> collectedKeys)
-                                        |> Set.unionMany
-                 let newQueueItems =
-                    states
-                    |> List.mapi (fun i (pos, distSoFar, collectedKeys) -> 
-                                    accessibleKeys vault allCollectedKeys pos
-                                    |> List.map (fun (pos, dist, key) -> states |> replaceNth i (pos, distSoFar + dist, Set.add key collectedKeys)))
-                    |> List.collect id
-                 shortestSolution vault (List.append rest newQueueItems) bestSolution
+            let totalDistSoFar = (states |> List.sumBy (fun (_, d, _) -> d))
+
+            let handled = match Map.tryFind ((createHandledKey states)) handledCache with
+                          | None -> false
+                          | (Some d) when d > totalDistSoFar -> false
+                          | _ -> true
+            if handled
+            then shortestSolution vault rest handledCache bestSolution
+            else let newHandledCache = Map.add (createHandledKey states) totalDistSoFar handledCache
+                 if List.sumBy (fun (_, _, collectedKeys) -> Set.count collectedKeys) states = allKeyCount
+                 then let newBestSolution = match bestSolution with 
+                                            | None -> totalDistSoFar
+                                            | Some d -> min d totalDistSoFar
+                      shortestSolution vault rest newHandledCache (Some newBestSolution)
+                 else 
+                      let allCollectedKeys = states
+                                             |> List.map (fun (_, _, collectedKeys) -> collectedKeys)
+                                             |> Set.unionMany
+                      let newQueueItems =
+                         states
+                         |> List.mapi (fun i (pos, distSoFar, collectedKeys) -> 
+                                         accessibleKeys vault allCollectedKeys pos
+                                         |> List.map (fun (pos, dist, key) -> states |> replaceNth i (pos, distSoFar + dist, Set.add key collectedKeys)))
+                         |> List.collect id
+                      shortestSolution vault (List.append rest newQueueItems) newHandledCache bestSolution
 
     let initialQueueItem = startingPositions |> List.map (fun p -> p, 0, Set.empty<char>)
-    shortestSolution vault [ initialQueueItem ] None
+    shortestSolution vault [ initialQueueItem ] Map.empty<string, int> None
 
-// let initialQueueItem = startingPositions |> List.map (fun p -> p, 0, Set.empty<char>)
 let result1 = shortestSolution vault startingPositions
